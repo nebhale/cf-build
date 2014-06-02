@@ -10,14 +10,12 @@
 set -e
 [ -n "$CFENV_DEBUG" ] && set -x
 
-# Provide cfenv completions
-if [ "$1" = "--complete" ]; then
-  exec cf-build --definitions
-fi
-
 if [ -z "$CFENV_ROOT" ]; then
   CFENV_ROOT="${HOME}/.cfenv"
 fi
+
+# Load shared library functions
+eval "$(cf-build --lib)"
 
 usage() {
   # We can remove the sed fallback once rbenv 0.4.0 is widely available.
@@ -41,7 +39,7 @@ for option in "${OPTIONS[@]}"; do
     SKIP_EXISTING=true
     ;;
   "version" )
-    exec ruby-build --version
+    exec cf-build --version
     ;;
   * )
     usage 1
@@ -76,15 +74,15 @@ after_create() {
 }
 
 OLDIFS="$IFS"
-IFS=$'\n' scripts=(`rbenv-hooks create`)
+IFS=$'\n' scripts=(`cfenv-hooks create`)
 IFS="$OLDIFS"
 for script in "${scripts[@]}"; do source "$script"; done
 
 
 # Set ENVIRONMENT_NAME from $DEFINITION, if it is not already set. Then
 # compute the installation prefix.
-[ -n "$VERSION_NAME" ] || VERSION_NAME="${DEFINITION##*/}"
-PREFIX="${RBENV_ROOT}/versions/${VERSION_NAME}"
+[ -n "$ENVIRONMENT_NAME" ] || ENVIRONMENT_NAME="${DEFINITION##*/}"
+PREFIX="${CFENV_ROOT}/environments/${ENVIRONMENT_NAME}"
 
 [ -d "${PREFIX}" ] && PREFIX_EXISTS=1
 
@@ -92,7 +90,7 @@ PREFIX="${RBENV_ROOT}/versions/${VERSION_NAME}"
 # the --force option was specified.
 if [ -d "${PREFIX}/bin" ]; then
   if [ -z "$FORCE" ] && [ -z "$SKIP_EXISTING" ]; then
-    echo "rbenv: $PREFIX already exists" >&2
+    echo "cfenv: $PREFIX already exists" >&2
     read -p "continue with installation? (y/N) "
 
     case "$REPLY" in
@@ -100,31 +98,12 @@ if [ -d "${PREFIX}/bin" ]; then
     * ) exit 1 ;;
     esac
   elif [ -n "$SKIP_EXISTING" ]; then
-    # Since we know the ruby version is already installed, and are opting to
-    # not force installation of existing versions, we just `exit 0` here to
+    # Since we know the Cloud Foundry environment is already installed, and are opting to
+    # not force installation of existing environments, we just `exit 0` here to
     # leave things happy
     exit 0
   fi
 fi
-
-# If RBENV_BUILD_ROOT is set, always pass keep options to ruby-build.
-if [ -n "${RBENV_BUILD_ROOT}" ]; then
-  export RUBY_BUILD_BUILD_PATH="${RBENV_BUILD_ROOT}/${VERSION_NAME}"
-  KEEP="-k"
-fi
-
-# Set RUBY_BUILD_CACHE_PATH to $RBENV_ROOT/cache, if the directory
-# exists and the variable is not already set.
-if [ -z "${RUBY_BUILD_CACHE_PATH}" ] && [ -d "${RBENV_ROOT}/cache" ]; then
-  export RUBY_BUILD_CACHE_PATH="${RBENV_ROOT}/cache"
-fi
-
-# Default RBENV_VERSION to the globally-specified Ruby version. (The
-# REE installer requires an existing Ruby installation to run. An
-# unsatisfied local .ruby-version file can cause the installer to
-# fail.)
-export RBENV_VERSION="$(rbenv-global 2>/dev/null || true)"
-
 
 # Execute `before_create` hooks.
 for hook in "${before_hooks[@]}"; do eval "$hook"; done
@@ -138,7 +117,7 @@ trap cleanup SIGINT
 
 # Invoke `cf-build` and record the exit status in $STATUS.
 STATUS=0
-cf-build $KEEP $VERBOSE $HAS_PATCH "$DEFINITION" "$PREFIX" || STATUS="$?"
+cf-build "$PREFIX" || STATUS="$?"
 
 # Execute `after_create` hooks.
 for hook in "${after_hooks[@]}"; do eval "$hook"; done

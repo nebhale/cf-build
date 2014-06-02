@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+CF_BUILD_VERSION="1.0.0"
+
+set -E
+exec 3<&2 # preserve original stderr at fd 3
+
+
+lib() {
+  parse_options() {
+    OPTIONS=()
+    ARGUMENTS=()
+    local arg option index
+
+    for arg in "$@"; do
+      if [ "${arg:0:1}" = "-" ]; then
+        if [ "${arg:1:1}" = "-" ]; then
+          OPTIONS[${#OPTIONS[*]}]="${arg:2}"
+        else
+          index=1
+          while option="${arg:$index:1}"; do
+            [ -n "$option" ] || break
+            OPTIONS[${#OPTIONS[*]}]="$option"
+            index=$(($index+1))
+          done
+        fi
+      else
+        ARGUMENTS[${#ARGUMENTS[*]}]="$arg"
+      fi
+    done
+  }
+
+  if [ "$1" == "--$FUNCNAME" ]; then
+    declare -f "$FUNCNAME"
+    echo "$FUNCNAME \"\$1\";"
+    exit
+  fi
+}
+lib "$1"
+
+create_cf_shim() {
+  cat > "$CF_SHIM_PATH" <<SH
+#!/usr/bin/env bash
+set -e
+[ -n "\$CFENV_DEBUG" ] && set -x
+
+expand_path() {
+  if [ ! -d "\$1" ]; then
+    return 1
+  fi
+
+  local cwd="\$(pwd)"
+  cd "\$1"
+  pwd
+  cd "\$cwd"
+}
+
+remove_from_path() {
+  local path_to_remove="\$(expand_path "\$1")"
+  local result=""
+
+  if [ -z "\$path_to_remove" ]; then
+    echo "\${PATH}"
+    return
+  fi
+
+  local paths
+  IFS=: paths=(\$PATH)
+
+  for path in "\${paths[@]}"; do
+    path="\$(expand_path "\$path" || true)"
+    if [ -n "\$path" ] && [ "\$path" != "\$path_to_remove" ]; then
+      result="\${result}\${path}:"
+    fi
+  done
+
+  echo "\${result%:}"
+}
+
+PATH="\$(remove_from_path "\$(dirname \$0)")"
+PATH="\$(remove_from_path "\${CFENV_ROOT}/shims")"
+CF_COMMAND=\$(which cf)
+
+export CF_HOME="$PREFIX_PATH"
+exec "\$CF_COMMAND" "\$@"
+SH
+  chmod +x "$CF_SHIM_PATH"
+}
+
+version() {
+  echo "cf-build ${CF_BUILD_VERSION}"
+}
+
+usage() {
+  { version
+    echo "usage: cf-build prefix"
+  } >&2
+
+  if [ -z "$1" ]; then
+    exit 1
+  fi
+}
+
+parse_options "$@"
+
+for option in "${OPTIONS[@]}"; do
+  case "$option" in
+  "h" | "help" )
+    usage 0
+    ;;
+  "version" )
+    version
+    exit 0
+    ;;
+  esac
+done
+
+PREFIX_PATH="${ARGUMENTS[0]}"
+if [ -z "$PREFIX_PATH" ]; then
+  usage
+elif [ "${PREFIX_PATH#/}" = "$PREFIX_PATH" ]; then
+  PREFIX_PATH="${PWD}/${PREFIX_PATH}"
+fi
+
+BIN_PATH="${PREFIX_PATH}/bin"
+CF_SHIM_PATH="${BIN_PATH}/cf"
+
+mkdir -p "$BIN_PATH"
+create_cf_shim

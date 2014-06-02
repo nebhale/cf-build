@@ -8,26 +8,26 @@ setup() {
   mkdir -p "$HOOK_PATH"
 }
 
-# @test "cfenv-create hooks" {
-#   cat > "${HOOK_PATH}/create.bash" <<OUT
-# before_create 'echo before: \$PREFIX'
-# after_create 'echo after: \$STATUS'
-# OUT
-#   stub cfenv-hooks "create : echo '$HOOK_PATH'/create.bash"
-#   stub cfenv-rehash "echo rehashed"
+@test "cfenv-create hooks" {
+  cat > "${HOOK_PATH}/create.bash" <<OUT
+before_create 'echo before: \$PREFIX'
+after_create 'echo after: \$STATUS'
+OUT
+  stub cfenv-hooks "create : echo '$HOOK_PATH'/create.bash"
+  stub cfenv-rehash "echo rehashed"
 
-#   definition="${TMP}/2.0.0"
-#   cat > "$definition" <<<"echo cf-build"
-#   run cfenv-create "$definition"
+  definition="${TMP}/2.0.0"
+  cat > "$definition" <<<"echo cf-build"
+  run cfenv-create "$definition"
 
-#   assert_success
-#   assert_output <<-OUT
-# before: ${CFENV_ROOT}/environments/2.0.0
-# cf-build
-# after: 0
-# rehashed
-# OUT
-# }
+  assert_success
+  assert_output <<-OUT
+before: ${CFENV_ROOT}/environments/2.0.0
+cf-build
+after: 0
+rehashed
+OUT
+}
 
 @test "cfenv-destroy hooks" {
   cat > "${HOOK_PATH}/destroy.bash" <<OUT
