@@ -12,9 +12,7 @@ if [ -z "${PREFIX}" ]; then
 fi
 
 BIN_PATH="${PREFIX}/bin"
-SHARE_PATH="${PREFIX}/share/cf-build"
 
-mkdir -p "$BIN_PATH" "$SHARE_PATH"
+mkdir -p "$BIN_PATH"
 
 install -p bin/* "$BIN_PATH"
-install -p -m 0644 share/cf-build/* "$SHARE_PATH"
