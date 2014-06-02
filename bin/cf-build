@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-CF_BUILD_VERSION="1.0.0.pre"
+CF_BUILD_VERSION="1.1.0.pre"
 
 set -E
 exec 3<&2 # preserve original stderr at fd 3
