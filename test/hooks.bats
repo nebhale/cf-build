@@ -16,14 +16,11 @@ OUT
   stub cfenv-hooks "create : echo '$HOOK_PATH'/create.bash"
   stub cfenv-rehash "echo rehashed"
 
-  definition="${TMP}/2.0.0"
-  cat > "$definition" <<<"echo cf-build"
-  run cfenv-create "$definition"
+  run cfenv-create "2.0.0"
 
   assert_success
   assert_output <<-OUT
 before: ${CFENV_ROOT}/environments/2.0.0
-cf-build
 after: 0
 rehashed
 OUT

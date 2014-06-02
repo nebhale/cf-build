@@ -10,36 +10,19 @@ load test_helper
   cd usr
 
   assert [ -x bin/cf-build ]
-  assert [ -x bin/cfenv-install ]
-  assert [ -x bin/cfenv-uninstall ]
-
-  assert [ -e share/cf ]
-}
-
-@test "build definitions don't have the executable bit" {
-  cd "$TMP"
-  PREFIX="${PWD}/usr" run "${BATS_TEST_DIRNAME}/../install.sh"
-  assert_success ""
-
-  run $BASH -c 'ls -l usr/share/cf-build | tail -2 | cut -d" " -f1'
-  assert_output <<OUT
--rw-r--r--
--rw-r--r--
-OUT
+  assert [ -x bin/cfenv-create ]
+  assert [ -x bin/cfenv-destroy ]
 }
 
 @test "overwrites old installation" {
   cd "$TMP"
-  mkdir -p bin share/cf-build
+  mkdir -p bin
   touch bin/cf-build
-  touch share/cf-build/1.8.6-p383
 
   PREFIX="$PWD" run "${BATS_TEST_DIRNAME}/../install.sh"
   assert_success ""
 
   assert [ -x bin/cf-build ]
-  run grep "install_package" share/cf-build/1.8.6-p383
-  assert_success
 }
 
 @test "unrelated files are untouched" {
