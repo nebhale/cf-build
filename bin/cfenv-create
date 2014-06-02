@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+#
+# Summary: Create a Cloud Foundry environment using cf-build
+#
+# Usage: cfenv create [-fs] <environment>
+#
+#   -f/--force         Install even if the environment appears to be installed already
+#   -s/--skip-existing Skip if the environment appears to be installed already
+#
+set -e
+[ -n "$CFENV_DEBUG" ] && set -x
+
+# Provide cfenv completions
+if [ "$1" = "--complete" ]; then
+  exec cf-build --definitions
+fi
+
+if [ -z "$CFENV_ROOT" ]; then
+  CFENV_ROOT="${HOME}/.cfenv"
+fi
+
+usage() {
+  # We can remove the sed fallback once rbenv 0.4.0 is widely available.
+  cfenv-help create 2>/dev/null || sed -ne '/^#/!q;s/.//;s/.//;1,4d;p' < "$0"
+  [ -z "$1" ] || exit "$1"
+}
+
+unset FORCE
+unset SKIP_EXISTING
+
+parse_options "$@"
+for option in "${OPTIONS[@]}"; do
+  case "$option" in
+  "h" | "help" )
+    usage 0
+    ;;
+  "f" | "force" )
+    FORCE=true
+    ;;
+  "s" | "skip-existing" )
+    SKIP_EXISTING=true
+    ;;
+  "version" )
+    exec ruby-build --version
+    ;;
+  * )
+    usage 1
+    ;;
+  esac
+done
+
+unset ENVIRONMENT_NAME
+
+# The first argument contains the definition to create. If the
+# argument is missing, try to create whatever local app-specific
+# environment is specified by cfenv. Show usage instructions if a local
+# environment is not specified.
+DEFINITION="${ARGUMENTS[0]}"
+[ -n "$DEFINITION" ] || DEFINITION="$(cfenv-local 2>/dev/null || true)"
+[ -n "$DEFINITION" ] || usage 1
+
+
+# Define `before_create` and `after_create` functions that allow
+# plugin hooks to register a string of code for execution before or
+# after the creation process.
+declare -a before_hooks after_hooks
+
+before_create() {
+  local hook="$1"
+  before_hooks["${#before_hooks[@]}"]="$hook"
+}
+
+after_create() {
+  local hook="$1"
+  after_hooks["${#after_hooks[@]}"]="$hook"
+}
+
+OLDIFS="$IFS"
+IFS=$'\n' scripts=(`rbenv-hooks create`)
+IFS="$OLDIFS"
+for script in "${scripts[@]}"; do source "$script"; done
+
+
+# Set ENVIRONMENT_NAME from $DEFINITION, if it is not already set. Then
+# compute the installation prefix.
+[ -n "$VERSION_NAME" ] || VERSION_NAME="${DEFINITION##*/}"
+PREFIX="${RBENV_ROOT}/versions/${VERSION_NAME}"
+
+[ -d "${PREFIX}" ] && PREFIX_EXISTS=1
+
+# If the installation prefix exists, prompt for confirmation unless
+# the --force option was specified.
+if [ -d "${PREFIX}/bin" ]; then
+  if [ -z "$FORCE" ] && [ -z "$SKIP_EXISTING" ]; then
+    echo "rbenv: $PREFIX already exists" >&2
+    read -p "continue with installation? (y/N) "
+
+    case "$REPLY" in
+    y* | Y* ) ;;
+    * ) exit 1 ;;
+    esac
+  elif [ -n "$SKIP_EXISTING" ]; then
+    # Since we know the ruby version is already installed, and are opting to
+    # not force installation of existing versions, we just `exit 0` here to
+    # leave things happy
+    exit 0
+  fi
+fi
+
+# If RBENV_BUILD_ROOT is set, always pass keep options to ruby-build.
+if [ -n "${RBENV_BUILD_ROOT}" ]; then
+  export RUBY_BUILD_BUILD_PATH="${RBENV_BUILD_ROOT}/${VERSION_NAME}"
+  KEEP="-k"
+fi
+
+# Set RUBY_BUILD_CACHE_PATH to $RBENV_ROOT/cache, if the directory
+# exists and the variable is not already set.
+if [ -z "${RUBY_BUILD_CACHE_PATH}" ] && [ -d "${RBENV_ROOT}/cache" ]; then
+  export RUBY_BUILD_CACHE_PATH="${RBENV_ROOT}/cache"
+fi
+
+# Default RBENV_VERSION to the globally-specified Ruby version. (The
+# REE installer requires an existing Ruby installation to run. An
+# unsatisfied local .ruby-version file can cause the installer to
+# fail.)
+export RBENV_VERSION="$(rbenv-global 2>/dev/null || true)"
+
+
+# Execute `before_create` hooks.
+for hook in "${before_hooks[@]}"; do eval "$hook"; done
+
+# Plan cleanup on unsuccessful installation.
+cleanup() {
+  [ -z "${PREFIX_EXISTS}" ] && rm -rf "$PREFIX"
+}
+
+trap cleanup SIGINT
+
+# Invoke `cf-build` and record the exit status in $STATUS.
+STATUS=0
+cf-build $KEEP $VERBOSE $HAS_PATCH "$DEFINITION" "$PREFIX" || STATUS="$?"
+
+# Execute `after_create` hooks.
+for hook in "${after_hooks[@]}"; do eval "$hook"; done
+
+# Run `cfenv-rehash` after a successful installation.
+if [ "$STATUS" == "0" ]; then
+  cfenv-rehash
+else
+  cleanup
+fi
+
+exit "$STATUS"

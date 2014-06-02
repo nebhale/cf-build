@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+set -e
+[ -n "$CFENV_DEBUG" ] && set -x
+
+READLINK=$(type -p greadlink readlink | head -1)
+if [ -z "$READLINK" ]; then
+  echo "cfenv: cannot find readlink - are you missing GNU coreutils?" >&2
+  exit 1
+fi
+
+resolve_link() {
+  $READLINK "$1"
+}
+
+expand_path() {
+  if [ ! -d "$1" ]; then
+    return 1
+  fi
+
+  local cwd="$(pwd)"
+  cd "$1"
+  pwd
+  cd "$cwd"
+}
+
+remove_from_path() {
+  local path_to_remove="$(expand_path "$1")"
+  local result=""
+
+  if [ -z "$path_to_remove" ]; then
+    echo "${PATH}"
+    return
+  fi
+
+  local paths
+  IFS=: paths=($PATH)
+
+  for path in "${paths[@]}"; do
+    path="$(expand_path "$path" || true)"
+    if [ -n "$path" ] && [ "$path" != "$path_to_remove" ]; then
+      result="${result}${path}:"
+    fi
+  done
+
+  echo "${result%:}"
+}
+
+abs_dirname() {
+  local cwd="$(pwd)"
+  local path="$1"
+
+  while [ -n "$path" ]; do
+    cd "${path%/*}"
+    local name="${path##*/}"
+    path="$(resolve_link "$name" || true)"
+  done
+
+  pwd
+  cd "$cwd"
+}
+
+PATH="$(remove_from_path "$(dirname $0)")"
+PATH="$(remove_from_path "${CFENV_ROOT}/shims")"
+CF_COMMAND=$(which cf)
+
+export CF_HOME=$(abs_dirname "$(dirname $0)/../..")
+exec "$CF_COMMAND" "$@"
