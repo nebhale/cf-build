@@ -20,6 +20,7 @@ Mac OS X users can install `cf-build` with the [Homebrew](http://brew.sh) packag
 
 *This is the recommended method of installation if you installed `cfenv` with Homebrew.*
 
+    brew tap pivotal/tap
     brew tap nebhale/personal
     brew install cf-build
 
